@@ -53,7 +53,8 @@ public enum LayerType: String, Codable {
             .background,
             .locationIndicator,
             .sky,
-            .model
+            .model,
+
         ]
 
         guard let matchingCase = supportedTypes.first(where: { $0.rawValue == rawValue }) else {

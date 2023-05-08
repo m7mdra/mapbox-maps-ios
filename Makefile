@@ -230,7 +230,7 @@ update-codecov-with-profdata:
 			-arch=$(COVERAGE_ARCH) \
 			-format=text | python3 -m json.tool > $${RESULT}.json ; \
 		echo "Uploading to S3" ; \
-		python3 ./scripts/code-coverage/parse-code-coverage.py \
+		python3 scripts/code-coverage/parse-code-coverage.py \
 			-g . \
 			-c MapboxMaps \
 			--scheme $(SCHEME) \

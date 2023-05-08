@@ -173,6 +173,8 @@ open class MapView: UIView {
 
     internal let attributionUrlOpener: AttributionURLOpener
 
+    internal let applicationStateProvider: Provider<UIApplication.State>?
+
     internal let eventsManager: EventsManagerProtocol
 
     /// Initialize a MapView
@@ -193,6 +195,7 @@ open class MapView: UIView {
 
         dependencyProvider = MapViewDependencyProvider(interfaceOrientationProvider: orientationProvider)
         attributionUrlOpener = DefaultAttributionURLOpener()
+        applicationStateProvider = .global
         notificationCenter = dependencyProvider.notificationCenter
         bundle = dependencyProvider.bundle
         cameraAnimatorsRunnerEnablable = dependencyProvider.cameraAnimatorsRunnerEnablable
@@ -218,6 +221,7 @@ open class MapView: UIView {
         defer { trace.end() }
         dependencyProvider = MapViewDependencyProvider(interfaceOrientationProvider: orientationProvider)
         attributionUrlOpener = urlOpener
+        self.applicationStateProvider = nil
         notificationCenter = dependencyProvider.notificationCenter
         bundle = dependencyProvider.bundle
         cameraAnimatorsRunnerEnablable = dependencyProvider.cameraAnimatorsRunnerEnablable
@@ -243,6 +247,7 @@ open class MapView: UIView {
             interfaceOrientationProvider: DefaultInterfaceOrientationProvider()
         )
         attributionUrlOpener = urlOpener
+        self.applicationStateProvider = nil
         notificationCenter = dependencyProvider.notificationCenter
         bundle = dependencyProvider.bundle
         cameraAnimatorsRunnerEnablable = dependencyProvider.cameraAnimatorsRunnerEnablable
@@ -268,6 +273,7 @@ open class MapView: UIView {
         bundle = dependencyProvider.bundle
         cameraAnimatorsRunnerEnablable = dependencyProvider.cameraAnimatorsRunnerEnablable
         attributionUrlOpener = DefaultAttributionURLOpener()
+        applicationStateProvider = .global
         resourceOptions = ResourceOptionsManager.default.resourceOptions
         eventsManager = dependencyProvider.makeEventsManager(accessToken: resourceOptions.accessToken)
         super.init(coder: coder)
@@ -276,11 +282,13 @@ open class MapView: UIView {
     internal init(frame: CGRect,
                   mapInitOptions: MapInitOptions,
                   dependencyProvider: MapViewDependencyProviderProtocol,
-                  urlOpener: AttributionURLOpener) {
+                  urlOpener: AttributionURLOpener,
+                  applicationStateProvider: Provider<UIApplication.State>?) {
         let trace = OSLog.platform.beginInterval("MapView.init")
         defer { trace.end() }
         self.dependencyProvider = dependencyProvider
         attributionUrlOpener = urlOpener
+        self.applicationStateProvider = applicationStateProvider
         notificationCenter = dependencyProvider.notificationCenter
         bundle = dependencyProvider.bundle
         cameraAnimatorsRunnerEnablable = dependencyProvider.cameraAnimatorsRunnerEnablable
@@ -379,7 +387,7 @@ open class MapView: UIView {
 
     internal func sendInitialTelemetryEvents() {
         eventsManager.sendTurnstile()
-        eventsManager.sendMapLoadEvent()
+        eventsManager.sendMapLoadEvent(with: traitCollection)
     }
 
     internal func setupManagers() {
@@ -508,21 +516,21 @@ open class MapView: UIView {
 
     @available(iOS 13.0, *)
     @objc private func sceneDidActivate(_ notification: Notification) {
-        guard notification.object as? UIScene == window?.parentScene else { return }
+        guard let scene = notification.object as? UIScene, let window = window, scene.allWindows.contains(window) else { return }
 
         displayLink?.isPaused = false
     }
 
     @available(iOS 13, *)
     @objc private func sceneWillDeactivate(_ notification: Notification) {
-        guard notification.object as? UIScene == window?.parentScene else { return }
+        guard let scene = notification.object as? UIScene, let window = window, scene.allWindows.contains(window) else { return }
 
         displayLink?.isPaused = true
     }
 
     @available(iOS 13, *)
     @objc private func sceneDidEnterBackground(_ notification: Notification) {
-        guard notification.object as? UIScene == window?.parentScene else { return }
+        guard let scene = notification.object as? UIScene, let window = window, scene.allWindows.contains(window) else { return }
 
         displayLink?.isPaused = true
         reduceMemoryUse()
@@ -577,7 +585,13 @@ open class MapView: UIView {
 
     open override func layoutSubviews() {
         super.layoutSubviews()
-        mapboxMap.size = bounds.size
+
+        // metal view is created by invoking `MapboxMap.createRenderer()`
+        // which is currently invoked in the init of the `MapboxMap`
+        // making metal view always available here
+        if let metalView = metalView {
+            mapboxMap.size = metalView.bounds.size
+        }
     }
 
     @_spi(Metrics) public var metricsReporter: MapViewMetricsReporter?
@@ -665,7 +679,7 @@ open class MapView: UIView {
     }
 
     private func shouldDisplayLinkBePaused(window: UIWindow) -> Bool {
-        if UIApplication.shared.applicationState != .active {
+        if let state = applicationStateProvider?.value, state != .active {
             return true
         }
 
